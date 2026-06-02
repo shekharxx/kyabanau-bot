@@ -1,50 +1,36 @@
 const twilio = require("twilio");
 
-// ── Ingredient keyword map ───────────────────────────────────────────────
+// ── Ingredient keyword map ────────────────────────────────────────────────
 const INGREDIENT_MAP = {
   "potato":"aloo","potatoes":"aloo","aloo":"aloo","alu":"aloo","aaloo":"aloo",
-  "onion":"pyaz","onions":"pyaz","pyaz":"pyaz","piyaz":"pyaz","pyaaz":"pyaz",
-  "piaz":"pyaz","piyaaz":"pyaz","onoin":"pyaz",
-  "tomato":"tamatar","tomatoes":"tamatar","tamatar":"tamatar","tamaatar":"tamatar",
-  "tamater":"tamatar","tomatar":"tamatar",
+  "onion":"pyaz","onions":"pyaz","pyaz":"pyaz","piyaz":"pyaz","pyaaz":"pyaz","piaz":"pyaz",
+  "tomato":"tamatar","tomatoes":"tamatar","tamatar":"tamatar","tamater":"tamatar","tomatar":"tamatar",
   "spinach":"palak","palak":"palak","paalak":"palak",
   "cauliflower":"gobi","gobi":"gobi","gobhi":"gobi","govi":"gobi",
   "peas":"matar","matar":"matar","matter":"matar","mattar":"matar","mutter":"matar",
-  "eggplant":"baingan","brinjal":"baingan","baingan":"baingan","baigan":"baingan",
-  "begun":"baingan","bangan":"baingan",
-  "okra":"bhindi","ladyfinger":"bhindi","bhindi":"bhindi","lady finger":"bhindi",
+  "eggplant":"baingan","brinjal":"baingan","baingan":"baingan","baigan":"baingan","begun":"baingan",
+  "okra":"bhindi","ladyfinger":"bhindi","bhindi":"bhindi",
   "bottle gourd":"lauki","lauki":"lauki","loki":"lauki","louki":"lauki",
   "fenugreek":"methi","methi":"methi","meethi":"methi",
-  "capsicum":"shimla mirch","bell pepper":"shimla mirch",
-  "shimla mirch":"shimla mirch","shimlamirch":"shimla mirch","shimla":"shimla mirch",
+  "capsicum":"shimla mirch","bell pepper":"shimla mirch","shimla mirch":"shimla mirch","shimla":"shimla mirch",
   "paneer":"paneer","cottage cheese":"paneer","paner":"paneer",
-  "curd":"dahi","dahi":"dahi","yogurt":"dahi","yoghurt":"dahi","dahi":"dahi",
-  "rice":"chawal","chawal":"chawal","chaawal":"chawal",
+  "curd":"dahi","dahi":"dahi","yogurt":"dahi",
+  "rice":"chawal","chawal":"chawal",
   "cabbage":"patta gobi","patta gobi":"patta gobi","band gobi":"patta gobi",
-  "carrot":"gajar","gajar":"gajar","gaajar":"gajar",
-  "beans":"beans","french beans":"beans","green beans":"beans",
+  "carrot":"gajar","gajar":"gajar",
+  "beans":"beans","french beans":"beans",
   "corn":"corn","sweet corn":"corn","makai":"corn",
-  "karela":"karela","bitter gourd":"karela","kareela":"karela",
+  "karela":"karela","bitter gourd":"karela",
   "arbi":"arbi","taro":"arbi","arvi":"arbi",
-  "tinda":"tinda","apple gourd":"tinda",
+  "tinda":"tinda","kaddu":"kaddu","pumpkin":"kaddu",
+  "mooli":"mooli","radish":"mooli",
   "rajma":"rajma","kidney beans":"rajma",
-  "kala chana":"kala chana","black chickpeas":"kala chana",
-  "kabuli chana":"kabuli chana","chickpeas":"kabuli chana","chole":"kabuli chana",
-  "kaddu":"kaddu","pumpkin":"kaddu","kaddoo":"kaddu",
-  "mooli":"mooli","radish":"mooli","muli":"mooli",
-  "suran":"suran","yam":"suran",
-  "sarson":"sarson","mustard greens":"sarson",
-  "oats":"oats",
-  "poha":"poha","flattened rice":"poha","pohe":"poha",
+  "chana":"kala chana","kala chana":"kala chana","chole":"kabuli chana","chickpeas":"kabuli chana",
+  "oats":"oats","poha":"poha","pohe":"poha",
   "suji":"suji","semolina":"suji","rava":"suji","sooji":"suji",
-  "besan":"besan","chickpea flour":"besan",
-  "sabudana":"sabudana","sago":"sabudana",
-  "bread":"bread","ब्रेड":"bread",
-  "seviyan":"seviyan","vermicelli":"seviyan","sewai":"seviyan",
-  "dal":"arhar dal","arhar":"arhar dal","toor":"arhar dal",
-  "moong":"moong dal","moong dal":"moong dal",
-  "masoor":"masoor dal","masoor dal":"masoor dal","lentil":"masoor dal",
-  "chana dal":"chana dal","urad":"urad dal","urad dal":"urad dal",
+  "besan":"besan","sabudana":"sabudana",
+  "bread":"bread","seviyan":"seviyan","vermicelli":"seviyan",
+  "dal":"arhar dal","arhar":"arhar dal","moong":"moong dal","masoor":"masoor dal",
 };
 
 function extractIngredients(message) {
@@ -61,15 +47,7 @@ function extractIngredients(message) {
   return [...found];
 }
 
-// ── Session store (in-memory, resets on redeploy — fine for POC) ─────────
-const sessions = {};
-
-function getSession(phone) {
-  if (!sessions[phone]) sessions[phone] = { lastRecipes: [] };
-  return sessions[phone];
-}
-
-// ── Airtable lookup ──────────────────────────────────────────────────────
+// ── Airtable: search by ingredients ──────────────────────────────────────
 async function findRecipes(ingredients) {
   const tableName = encodeURIComponent("Imported table");
   const url = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${tableName}`;
@@ -79,164 +57,156 @@ async function findRecipes(ingredients) {
   const data = await resp.json();
   if (!data.records) return [];
 
-  const scored = data.records
+  return data.records
     .map(rec => {
       const f = rec.fields;
-      const recipeIngredients = (f.all_ingredients || "")
-        .toLowerCase().split(",").map(s => s.trim());
-      const matches = ingredients.filter(i => recipeIngredients.includes(i));
+      const ri = (f.all_ingredients || "").toLowerCase().split(",").map(s => s.trim());
+      const matches = ingredients.filter(i => ri.includes(i));
       return { ...f, matchCount: matches.length, matchedWith: matches };
     })
     .filter(r => r.matchCount > 0)
-    .sort((a, b) => b.matchCount - a.matchCount);
-
-  return scored.slice(0, 5);
+    .sort((a, b) => b.matchCount - a.matchCount)
+    .slice(0, 5);
 }
 
-// ── Reply formatters ─────────────────────────────────────────────────────
+// ── Airtable: fetch single recipe by name (stateless lookup) ─────────────
+async function findRecipeByName(recipeName) {
+  const tableName = encodeURIComponent("Imported table");
+  const url = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${tableName}`;
+  const resp = await fetch(url, {
+    headers: { Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}` }
+  });
+  const data = await resp.json();
+  if (!data.records) return null;
+
+  const query = recipeName.toLowerCase().trim();
+  return data.records
+    .map(r => r.fields)
+    .find(f =>
+      (f.name || "").toLowerCase() === query ||
+      (f.name_hindi || "").toLowerCase() === query ||
+      (f.name || "").toLowerCase().includes(query) ||
+      query.includes((f.name || "").toLowerCase())
+    ) || null;
+}
+
+// ── Formatters ────────────────────────────────────────────────────────────
 function formatRecipeList(recipes, ingredients) {
   const lines = [
-    `🍛 *${ingredients.join(" + ")}* se yeh bana sakte hain:\n`,
-    `🍛 *${ingredients.join(" + ")}* से यह बना सकते हैं:\n`
+    `🍛 *${ingredients.join(" + ")}* se yeh bana sakte hain:`,
+    `🍛 *${ingredients.join(" + ")}* से यह बना सकते हैं:\n`,
   ];
 
   recipes.forEach((r, i) => {
-    lines.push(
-      `*${i+1}. ${r.name}* — ${r.name_hindi || ""} (${r.cook_time_mins} min)`,
-      `📍 ${r.region} · ${r.diet_type || "Veg"}`,
-      ``
-    );
+    lines.push(`*${i+1}.* ${r.name} — _${r.name_hindi || ""}_  ⏱ ${r.cook_time_mins} min`);
+    lines.push(`    📍 ${r.region} · ${(r.diet_type||"Veg").split(",")[0]}`);
+    lines.push(``);
   });
 
   lines.push(`──────────────────`);
-  lines.push(`📩 *Recipe select karne ke liye sirf number bhejein:*`);
-  lines.push(`👆 *सिर्फ नंबर भेजें — 1, 2, 3...*`);
-  lines.push(`\n_Example: "2" bhejne par Aloo Methi ki recipe milegi_`);
-  lines.push(`_उदाहरण: "2" भेजें तो उस recipe की maid card milegi_ 👩‍🍳`);
+  lines.push(`👇 *Recipe ka naam bhejein / नाम भेजें:*`);
+  lines.push(`_Example: "Aloo Methi" ya "Dal Tadka"_`);
+  lines.push(`_Poori recipe + maid card milega!_ 👩‍🍳`);
 
   return lines.join("\n");
 }
 
-function formatFullRecipe(recipe) {
+function formatFullRecipeAndMaid(recipe) {
   const steps = (recipe.cooking_steps || "")
-    .split("|")
-    .map((s, i) => `${i+1}. ${s.trim()}`)
-    .join("\n");
+    .split("|").map((s,i) => `${i+1}. ${s.trim()}`).join("\n");
+
+  const ingredientList = (recipe.all_ingredients || "")
+    .split(",").map(i => `• ${i.trim()}`).join("\n");
 
   return [
-    `🍛 *${recipe.name}* — ${recipe.name_hindi || ""}`,
-    `📍 ${recipe.region} · ⏱ ${recipe.cook_time_mins} min · 👥 ${recipe.serves} servings`,
+    `🍛 *${recipe.name}*`,
+    `🍛 *${recipe.name_hindi || ""}*`,
+    `📍 ${recipe.region} · ⏱ ${recipe.cook_time_mins} min · 👥 Serves ${recipe.serves}`,
     ``,
     `*Ingredients / सामग्री:*`,
-    (recipe.all_ingredients || "").split(",").map(i => `• ${i.trim()}`).join("\n"),
+    ingredientList,
     ``,
     `*Steps / विधि:*`,
     steps,
     ``,
-    `──────────────────`,
-    `👩‍🍳 *Maid instructions chahiye? / मेड के लिए आसान निर्देश?*`,
-    `Reply *MAID* to get simple step-by-step maid card`,
-    `*MAID* भेजें — मेड के लिए आसान कार्ड मिलेगा 🙏`
-  ].join("\n");
-}
-
-function formatMaidCard(recipe) {
-  return [
-    `👩‍🍳 *${recipe.name} — Maid Instructions*`,
-    `👩‍🍳 *${recipe.name} — मेड के लिए निर्देश*`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `👩‍🍳 *Maid Instructions / मेड के लिए:*`,
     ``,
-    recipe.maid_instructions || "No maid instructions available.",
+    recipe.maid_instructions || "Not available.",
     ``,
-    `──────────────────`,
-    `_Yeh card apni maid ko forward kar sakte hain_ 📲`,
-    `_यह card अपनी maid को forward करें_ 🙏`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `📲 _Yeh card apni maid ko forward karein_`,
+    `📲 _यह card मेड को forward करें_ 🙏`,
     ``,
-    `_Kya Banau? — Aapka daily kitchen helper_`
+    `_Naya search karne ke liye ingredients bhejein!_`,
+    `_नया search करें — सब्ज़ियों का नाम भेजें!_ 🍛`,
   ].join("\n");
 }
 
 function helpMessage() {
   return [
-    `🍛 *Kya Banau? — Aapka Kitchen Helper*`,
-    `🍛 *क्या बनाऊं? — आपका किचन हेल्पर*`,
+    `🍛 *Kya Banau? — Kitchen Helper*`,
+    `🍛 *क्या बनाऊं? — किचन हेल्पर*`,
     ``,
-    `*How to use / कैसे use करें:*`,
-    `Jo vegetables aapke paas hain woh likhen:`,
-    `जो सब्जियाँ आपके पास हों वो लिखें:`,
+    `*Kaise use karein / कैसे use करें:*`,
     ``,
-    `*Examples:*`,
-    `• aloo pyaz tamatar`,
-    `• palak paneer`,
-    `• gobi matar aloo`,
-    `• भिंडी प्याज़`,
+    `*Step 1:* Vegetables ka naam bhejein`,
+    `*Step 1:* सब्ज़ियों का नाम भेजें`,
+    `_Example: aloo pyaz tamatar_`,
     ``,
-    `Main top 5 recipes suggest karunga! 😊`,
-    `मैं top 5 recipes suggest करूँगा! 😊`,
+    `*Step 2:* Recipe ka naam bhejein`,
+    `*Step 2:* Recipe का नाम भेजें`,
+    `_Example: Aloo Methi_`,
+    ``,
+    `*Step 3:* Poori recipe + maid card milega!`,
+    `*Step 3:* पूरी recipe + maid card मिलेगा! 👩‍🍳`,
     ``,
     `──────────────────`,
-    `*Commands / कमांड:*`,
-    `• Number (1-5) → Full recipe + ingredients`,
-    `• *MAID* → Simple maid instructions card`,
-    `• *HELP* → This message / यह message`,
+    `*Examples try karein:*`,
+    `▸ aloo pyaz tamatar`,
+    `▸ palak paneer`,
+    `▸ gobi matar`,
+    `▸ bhindi`,
+    `▸ dal chawal`,
     ``,
-    `_Kya Banau? is FREE — Share with friends!_ 🙏`,
-    `_क्या बनाऊं? FREE है — दोस्तों को share करें!_ 🙏`
+    `_FREE service — Share with friends!_ 🙏`,
+    `_FREE service — दोस्तों को share करें!_ 🙏`,
   ].join("\n");
 }
 
-// ── Main handler ─────────────────────────────────────────────────────────
+// ── Main handler ──────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   const userMessage = (req.body.Body || "").trim();
   const userPhone   = req.body.From || "";
-  const session     = getSession(userPhone);
 
-  // ── HELP ──
-  if (!userMessage || ["help","hi","hello","helo","hii","hey","start"].includes(userMessage.toLowerCase())) {
+  // ── HELP / GREETING ──
+  const greetings = ["help","hi","hello","helo","hii","hey","start","menu","ok","okay","haan"];
+  if (!userMessage || greetings.includes(userMessage.toLowerCase())) {
     await sendWhatsApp(userPhone, helpMessage());
     return res.status(200).end();
   }
 
-  // ── MAID — show maid card for last selected recipe ──
-  if (userMessage.toUpperCase() === "MAID") {
-    const recipe = session.lastSelectedRecipe || (session.lastRecipes && session.lastRecipes[0]);
-    if (!recipe) {
-      await sendWhatsApp(userPhone,
-        `Pehle koi recipe select karein (1-5 bhejein) phir MAID likhein.\nपहले recipe select करें (1-5 भेजें) फिर MAID लिखें। 🙏`
-      );
-    } else {
-      await sendWhatsApp(userPhone, formatMaidCard(recipe));
-    }
-    return res.status(200).end();
-  }
+  // ── RECIPE NAME LOOKUP (stateless) ──
+  // If message is NOT a pure ingredient list, try it as a recipe name first
+  const ingredients = extractIngredients(userMessage);
+  const looksLikeRecipeName = userMessage.length > 2 && ingredients.length === 0;
+  const mightBeRecipeName   = ingredients.length > 0 && userMessage.split(" ").length <= 4
+                               && /[A-Z]/.test(userMessage); // has capital = likely a name
 
-  // ── NUMBER SELECTION (1-5) ──
-  if (/^[1-5]$/.test(userMessage.trim())) {
-    const idx = parseInt(userMessage.trim()) - 1;
-    const recipes = session.lastRecipes || [];
-    if (recipes.length === 0) {
-      await sendWhatsApp(userPhone,
-        `Pehle ingredients bhejein, phir number select karein.\nपहले ingredients भेजें, फिर number select करें। 😊`
-      );
-    } else if (idx >= recipes.length) {
-      await sendWhatsApp(userPhone,
-        `Sirf ${recipes.length} recipes hain. 1 se ${recipes.length} ke beech number bhejein.\nसिर्फ ${recipes.length} recipes हैं। 1 से ${recipes.length} के बीच number भेजें।`
-      );
-    } else {
-      const chosen = recipes[idx];
-      session.lastSelectedRecipe = chosen;
-      await sendWhatsApp(userPhone, formatFullRecipe(chosen));
+  if (looksLikeRecipeName || mightBeRecipeName) {
+    const recipe = await findRecipeByName(userMessage);
+    if (recipe) {
+      await sendWhatsApp(userPhone, formatFullRecipeAndMaid(recipe));
+      return res.status(200).end();
     }
-    return res.status(200).end();
   }
 
   // ── INGREDIENT SEARCH ──
-  const ingredients = extractIngredients(userMessage);
-
   if (ingredients.length === 0) {
     await sendWhatsApp(userPhone,
-      `Kuch samajh nahi aaya 🤔\n\nIngredients ka naam likhein jaise:\n*aloo pyaz tamatar*\n\nYa *HELP* bhejein.\n\nकुछ समझ नहीं आया 🤔\nसब्जी का नाम लिखें जैसे: *आलू प्याज़ टमाटर*\nया *HELP* भेजें।`
+      `Samajh nahi aaya 🤔\n\nVegetables ka naam likhein:\n*aloo pyaz tamatar*\n\nYa *HELP* bhejein.\n\n─\nसमझ नहीं आया 🤔\nसब्ज़ी का नाम लिखें: *आलू प्याज़ टमाटर*\nया *HELP* भेजें।`
     );
     return res.status(200).end();
   }
@@ -245,20 +215,16 @@ export default async function handler(req, res) {
 
   if (recipes.length === 0) {
     await sendWhatsApp(userPhone,
-      `*${ingredients.join(", ")}* se koi recipe nahi mili. 😔\n\nAur ingredients add karein ya alag combination try karein!\n\n*${ingredients.join(", ")}* से कोई recipe नहीं मिली।\nAur सब्जियाँ add करें या अलग combination try करें! 🥗`
+      `*${ingredients.join(", ")}* se koi recipe nahi mili 😔\n\nAur ingredients add karke try karein!\n─\n*${ingredients.join(", ")}* से कोई recipe नहीं मिली।\nAur सब्ज़ियाँ add करें या अलग combination try करें! 🥗`
     );
     return res.status(200).end();
   }
-
-  // Save to session
-  session.lastRecipes = recipes;
-  session.lastSelectedRecipe = null;
 
   await sendWhatsApp(userPhone, formatRecipeList(recipes, ingredients));
   res.status(200).end();
 }
 
-// ── Twilio sender ────────────────────────────────────────────────────────
+// ── Twilio sender ─────────────────────────────────────────────────────────
 async function sendWhatsApp(to, body) {
   const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
   await client.messages.create({
