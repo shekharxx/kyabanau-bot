@@ -2,6 +2,7 @@
   "name": "kyabanau-bot",
   "version": "1.0.0",
   "dependencies": {
-    "twilio": "^4.0.0"
+    "twilio": "^4.0.0",
+    "@vercel/kv": "^1.0.0"
   }
 }
